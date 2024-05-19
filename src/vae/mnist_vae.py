@@ -455,7 +455,7 @@ class ConditionalVae(nn.Module):
             kl_loss_li
         )
 
-    def generate_data(self, n_samples=5, target_label=1) -> tensor:
+    def generate_data(self, n_samples=5, target_label=0) -> tensor:
         """
         Generates random data samples (of size n) from the latent space
         """

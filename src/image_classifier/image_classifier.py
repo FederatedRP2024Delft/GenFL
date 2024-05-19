@@ -83,6 +83,7 @@ class MNISTClassifier(nn.Module):
             testing_data: tensor,
             labels: tensor
     ) -> float:
+        wrong_count = 0
         correct = 0
         total = 0
         for i, input in enumerate(testing_data):
@@ -90,7 +91,11 @@ class MNISTClassifier(nn.Module):
             _, predicted = torch.max(outputs.data, 1)
             _, label = torch.max(labels[i], 0)
             total += 1
-            correct += (predicted == label).sum().item()
+            is_correct = (predicted == label).sum().item()
+            if is_correct == 0:
+                wrong_count+=1
+            correct += is_correct
+        print("Wrong count: ", wrong_count)
         return correct / total
 
 

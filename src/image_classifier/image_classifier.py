@@ -95,7 +95,7 @@ class MNISTClassifier(nn.Module):
             if is_correct == 0:
                 wrong_count+=1
             correct += is_correct
-        print("Wrong count: ", wrong_count)
+        # print("Wrong count: ", wrong_count)
         return correct / total
 
 

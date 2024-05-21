@@ -190,13 +190,14 @@ class ExquisiteNetV1(nn.Module):
         true_labels_list = []
 
         criterion = nn.NLLLoss().to(device)
-        testloader = DataLoader(test_dataset, batch_size=batch_size,
-                                shuffle=False)
+        testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-        for batch_idx, (images, labels) in enumerate(testloader):
+        for images, labels in testloader:
             images, labels = images.to(device), labels.to(device)
             outputs = self.forward(images)
             batch_loss = criterion(outputs, labels)
+
+            # accumulate average of batch losses
             loss += batch_loss.item() / len(testloader)
 
             # Prediction

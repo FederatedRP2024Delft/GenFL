@@ -1,5 +1,8 @@
 
 import collections
+
+import numpy as np
+from sklearn.metrics import f1_score
 from torch import nn, device, cuda
 import torch
 import torch.optim as optim
@@ -154,6 +157,7 @@ class ExquisiteNetV1(nn.Module):
     def train_model(
             self,
             training_data,
+            testing_data,
             batch_size,
             learning_rate,
             epochs
@@ -174,26 +178,42 @@ class ExquisiteNetV1(nn.Module):
                 loss.backward()
                 optimizer.step()
             print("Epoch done: ", epoch + 1)
+            print("Training loss: ", loss.item())
+            _, loss, _, _ = self.test_inference(testing_data, batch_size)
+            print("Testing loss: ", loss)
 
-    def test_model(
-            self,
-            testing_data: Dataset
-    ) -> float:
-        test_dataloader = DataLoader(testing_data, shuffle=True)
-        wrong = 0
-        correct = 0
-        total = 0
-        for input, label in test_dataloader:
-            outputs = self.forward(input)
-            _, predicted = torch.max(outputs.data, 1)
-            if predicted != label:
-                wrong += 1
-            else:
-                correct += 1
-            total += 1
-        print(correct)
-        print(wrong)
-        return correct / total
+    def test_inference(self, test_dataset, batch_size):
+        # model.eval()
+        loss, total, correct = 0.0, 0.0, 0.0
+
+        pred_labels_list = []
+        true_labels_list = []
+
+        criterion = nn.NLLLoss().to(device)
+        testloader = DataLoader(test_dataset, batch_size=batch_size,
+                                shuffle=False)
+
+        for batch_idx, (images, labels) in enumerate(testloader):
+            images, labels = images.to(device), labels.to(device)
+            outputs = self.forward(images)
+            batch_loss = criterion(outputs, labels)
+            loss += batch_loss.item() / len(testloader)
+
+            # Prediction
+            _, pred_labels = torch.max(outputs, 1)
+            pred_labels = pred_labels.view(-1)
+            correct += torch.sum(torch.eq(pred_labels, labels)).item()
+            total += len(labels)
+
+            pred_labels_list.append(pred_labels.cpu().numpy())
+            true_labels_list.append(labels.cpu().numpy())
+
+        pred_labels_all = np.concatenate(pred_labels_list, axis=0)
+        true_labels_all = np.concatenate(true_labels_list, axis=0)
+        f1_macro = f1_score(true_labels_all, pred_labels_all, average='macro')
+        f1_micro = f1_score(true_labels_all, pred_labels_all, average='micro')
+        accuracy = correct / total
+        return accuracy, loss, f1_macro, f1_micro
 
     def generate_labels(
             self,
@@ -215,6 +235,7 @@ class ExquisiteNetV1(nn.Module):
         correct = 0
         total = 0
         for i, input in enumerate(testing_data):
+            input = input.to(device)
             outputs = self.forward(input)
             _, predicted = torch.max(outputs.data, 1)
             _, label = torch.max(labels[i], 0)

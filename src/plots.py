@@ -1,8 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-
-import torchvision
 
 
 def plot_two_d_latents(model, input, labels):

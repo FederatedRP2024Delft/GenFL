@@ -2,7 +2,7 @@ import random
 from torchvision import transforms
 
 import torch.utils.data
-from src.vae.mnist_vae import ConditionalVae
+from vae.mnist_vae import ConditionalVae
 
 
 def impute_cvae_naive(k, trained_cvae: ConditionalVae, initial_dataset):

@@ -9,9 +9,7 @@ from torch import nn
 from torch.distributions.kl import kl_divergence
 from torch.distributions.normal import Normal
 from torcheval.metrics import FrechetInceptionDistance
-from src.sampling import *
-from src.sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
-from src.sampling import cifar_iid, cifar_noniid
+from sampling import *
 
 
 def get_dataset(args):
@@ -21,7 +19,7 @@ def get_dataset(args):
     """
 
     if args.dataset == 'cifar':
-        data_dir = '../data/cifar/'
+        data_dir = '../../data/cifar/'
         apply_transform = transforms.Compose(
             [transforms.ToTensor(),
              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -54,13 +52,13 @@ def get_dataset(args):
 
 
         if args.dataset == 'mnist':
-            data_dir = '../data/mnist/'
+            data_dir = '../../data/mnist/'
             train_dataset = datasets.MNIST(data_dir, train=True, download=True,
                                            transform=apply_transform)
             test_dataset = datasets.MNIST(data_dir, train=False, download=True,
                                           transform=apply_transform)
         else:
-            data_dir = '../data/fmnist/'
+            data_dir = '../../data/fmnist/'
             train_dataset = datasets.FashionMNIST(data_dir, train=True, download=True,
                                            transform=apply_transform)
             test_dataset = datasets.FashionMNIST(data_dir, train=False, download=True,
@@ -109,7 +107,7 @@ def fed_avg(local_weights, dataset_size_per_client):
 
 def exp_details(args):
     print('\nExperimental details:')
-    print(f'    Model     : {args.classifier}')
+    print(f'    Model     : {args.model}')
     print(f'    Optimizer : {args.optimizer}')
     print(f'    Learning  : {args.lr}')
     print(f'    Global Rounds   : {args.epochs}\n')

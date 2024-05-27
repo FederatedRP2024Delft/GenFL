@@ -1,4 +1,4 @@
-from src.utils import kl_loss, vae_loss_fn, vae_classifier_loss_fn
+from src.utils import kl_loss, vae_loss_fn, vae_classifier_loss_fn, reg_loss_fn
 
 import torch
 from torch import Tensor, tensor, device, cuda
@@ -55,138 +55,6 @@ class VaeEncoder(nn.Module):
         # absence of an activation function means that the output can be any real-valued number
         return self.fc3(x)
 
-
-class VaeDecoder(nn.Module):
-    """
-    Decoder that outputs 28x28 pixel images from the latent space vectors
-    """
-
-    def __init__(self, dim_encoding):
-        super(VaeDecoder, self).__init__()
-        self.fc1 = nn.Linear(dim_encoding, HIDDEN_LAYER_SIZE_2)
-        self.fc2 = nn.Linear(HIDDEN_LAYER_SIZE_2, HIDDEN_LAYER_SIZE_1)
-        self.fc3 = nn.Linear(HIDDEN_LAYER_SIZE_1, INPUT_SIZE)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Takes in Tensor of the latent space vectors and outputs a 28x28 pixel image
-
-        For example, given 6 data points as input and 2-dimensional latent space:
-        - x: torch.Size([6, 2])
-        - output: torch.Size([6, 1, 28, 28])
-        """
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
-
-        # match input shape back to 28x28 pixels
-        return x.reshape(-1, 1, 28, 28)
-
-
-class VaeAutoencoder(nn.Module):
-    """
-    Variational Autoencoder. VAEs extend the concept of AEs by mapping the input data to a distribution
-    (usually a multivariate normal distribution). Generates data by sampling from the learned latent space.
-
-    Returns a tensor of a random MNIST image.
-    """
-    def __init__(self, dim_encoding):
-        super(VaeAutoencoder, self).__init__()
-        self.latent_space_vector = None
-        self.encodings = None
-        self.z_dist = None
-        self.dim_encoding = dim_encoding
-        self.encoder = VaeEncoder(dim_encoding)
-        self.decoder = VaeDecoder(dim_encoding)
-
-    def reparameterize(self, encodings: Tensor) -> Tensor:
-        mu = encodings[:, :self.dim_encoding]
-
-        # must do exponential, otherwise get value error that not all positive
-        sigma = 1e-6 + F.softplus(encodings[:, self.dim_encoding:])
-
-        z_dist = Normal(mu, sigma)
-        self.z_dist = z_dist
-        z = z_dist.rsample()
-        return z
-
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        """
-        After encoder compresses input data into encodings, this method performs re-parameterization to convert
-        them to a latent space vector (has normal distribution).
-
-        Decoder then returns a tensor of a random MNIST image.
-        """
-        encodings = self.encoder(x)
-        self.encodings = encodings
-        z = self.reparameterize(encodings)
-
-        assert z.shape[1] == self.dim_encoding
-        self.latent_space_vector = z
-        return self.decoder(z)
-
-    def train_model(
-            self,
-            training_data,
-            batch_size=64,
-            beta=1.0,
-            epochs=5
-    ) -> tuple[nn.Module, list, list]:
-        vl_fn = vae_loss_fn(beta)
-        kl_div_fn = kl_loss()
-
-        model = self.to(device)
-        optimizer = torch.optim.Adam(params=model.parameters())
-
-        training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
-
-        vae_loss_li = []
-        kl_loss_li = []
-
-        for epoch in range(epochs):
-            i = 0
-            for input, _ in training_dataloader:
-                input = input.to(device)
-                output = model(input)
-
-                # loss function to back-propagate on
-                loss = vl_fn(input, output, model.z_dist)
-
-                print(loss)
-
-                # back propagation
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                i += 1
-                if i % 100 == 0:
-                    # append vae loss
-                    vae_loss_li.append(loss.item())
-
-                    # calculate KL divergence loss
-                    kl_loss_li.append(
-                        kl_div_fn(model.z_dist)
-                    )
-            print("Finished epoch: ", epoch + 1)
-        return (
-            model.to('cpu'),
-            vae_loss_li,
-            kl_loss_li
-        )
-
-    def generate_data(self, n_samples=32) -> tuple[Tensor, Tensor]:
-        """
-        Generates random data samples (of size n) from the latent space
-        """
-        device = next(self.parameters()).device
-        input_sample = torch.randn(n_samples, self.dim_encoding).to(device)
-
-        assert(input_sample.shape[0] == n_samples)
-
-        output = self.decoder(input_sample)
-        return output.reshape(-1, 1, 28, 28)
-
-
 class ConditionalVaeDecoder(nn.Module):
     """
     Classifier decoder that outputs both images and its corresponding vector of label probabilities
@@ -204,160 +72,6 @@ class ConditionalVaeDecoder(nn.Module):
 
         # match input shape back to 28x28 pixels
         return x.reshape(-1, 1, 28, 28)
-
-
-class VaeClassifierDecoder(nn.Module):
-    """
-    Classifier decoder that outputs both images and its corresponding vector of label probabilities
-    """
-
-    def __init__(self, dim_encoding):
-        super(VaeClassifierDecoder, self).__init__()
-        self.fc1 = nn.Linear(dim_encoding, HIDDEN_LAYER_SIZE_2)
-        self.fc2 = nn.Linear(HIDDEN_LAYER_SIZE_2, HIDDEN_LAYER_SIZE_1)
-        self.fc3 = nn.Linear(HIDDEN_LAYER_SIZE_1, INPUT_SIZE + 10)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Takes in Tensor of the latent space vectors and outputs the 28x28 pixel image and vector of label probabilities
-
-        For example, given 6 data points as input and 2-dimensional latent space:
-        - x: torch.Size([6, 2])
-        - output: torch.Size([6, 1, 28, 28]), torch.Size([6, 10])
-        """
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.sigmoid(self.fc3(x))
-        return x
-
-
-class VaeAutoencoderClassifier(nn.Module):
-    """
-    Classifier decoder that returns both images and its corresponding vector of label probabilities
-    """
-    def __init__(self, dim_encoding):
-        super(VaeAutoencoderClassifier, self).__init__()
-        self.z_dist = None
-        self.encodings = None
-        self.latent_space_vector = None
-        self.dim_encoding = dim_encoding
-        self.encoder = VaeEncoder(dim_encoding)
-        self.decoder = VaeClassifierDecoder(dim_encoding)
-
-    def reparameterize(self, encodings: Tensor) -> Tensor:
-        mu = encodings[:, :self.dim_encoding]
-
-        # must do exponential, otherwise get value error that not all positive
-        sigma = 1e-6 + F.softplus(encodings[:, self.dim_encoding:])
-
-        z_dist = Normal(mu, sigma)
-        self.z_dist = z_dist
-        z = z_dist.rsample()
-        return z
-
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        """
-        After encoder compresses input data into encodings, this method performs re-parameterization to convert
-        them to a latent space vector (has normal distribution).
-
-        Decoder then returns a tensor of images and label probabilities
-        """
-        encodings = self.encoder(x)
-        self.encodings = encodings
-        z = self.reparameterize(encodings)
-
-        assert z.shape[1] == self.dim_encoding
-        self.latent_space_vector = z
-        decoded = self.decoder(z)
-        return decoded[:, :INPUT_SIZE].reshape(-1, 1, 28, 28), decoded[:, INPUT_SIZE:]
-
-    def train_model(
-            self,
-            training_data,
-            batch_size=64,
-            alpha=1.0,
-            beta=1.0,
-            epochs=5
-    ) -> tuple[nn.Module, list, list, list, list, list]:
-        complete_loss_fn = vae_classifier_loss_fn(alpha, beta)
-        cl_fn = nn.CrossEntropyLoss()
-        vl_fn = vae_loss_fn(beta)
-        kl_div_fn = kl_loss()
-
-        model = self.to(device)
-        optimizer = torch.optim.Adam(params=model.parameters())
-
-        training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
-
-        total_losses = []
-        classifier_accuracy_li = []
-        classifier_loss_li = []
-        vae_loss_li = []
-        kl_loss_li = []
-
-        for epoch in range(epochs):
-            i = 0
-            for input, labels in training_dataloader:
-                input = input.to(device)
-                labels = labels.to(device)
-                output = model(input)
-
-                # loss function to back-propagate on
-                loss = complete_loss_fn(
-                    input,
-                    output,
-                    model.z_dist,
-                    labels
-                )
-
-                # back propagation
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                i += 1
-                if i % 100 == 0:
-                    total_losses.append(loss.item())
-
-                    # calculate accuracy
-                    matches_labels = (torch.argmax(output[1], 1) == labels)
-                    accuracy = torch.mean(matches_labels.float())
-                    classifier_accuracy_li.append(accuracy)
-
-                    # calculate cross entropy loss
-                    classifier_loss_li.append(
-                        cl_fn(output[1], labels)
-                    )
-
-                    # calculate VAE loss
-                    vae_loss_li.append(
-                        vl_fn(input, output[0], model.z_dist)
-                    )
-
-                    # calculate KL divergence loss
-                    kl_loss_li.append(
-                        kl_div_fn(model.z_dist)
-                    )
-            print("Finished epoch: ", epoch + 1)
-        return (
-            model.to('cpu'),
-            total_losses,
-            classifier_accuracy_li,
-            classifier_loss_li,
-            vae_loss_li,
-            kl_loss_li
-        )
-
-    def generate_data(self, n_samples=32) -> tuple[Tensor, Tensor]:
-        """
-        Generates random data samples (of size n) from the latent space
-        """
-        device = next(self.parameters()).device
-        input_sample = torch.randn(n_samples, self.dim_encoding).to(device)
-
-        assert(input_sample.shape[0] == n_samples)
-
-        output = self.decoder(input_sample)
-        return output[:, :INPUT_SIZE].reshape(-1, 1, 28, 28), output[:, INPUT_SIZE:]
 
 
 class ConditionalVae(nn.Module):
@@ -391,6 +105,9 @@ class ConditionalVae(nn.Module):
 
         Decoder then returns a tensor of images and label probabilities
         """
+        device = next(self.parameters()).device
+        x = x.to(device)
+        y = y.to(device)
         encodings = self.encoder(x)
         self.encodings = encodings
         z = self.reparameterize(encodings)
@@ -413,9 +130,10 @@ class ConditionalVae(nn.Module):
             beta=1.0,
             epochs=5,
             learning_rate=0.01
-    ) -> tuple[nn.Module, list, list]:
+    ) -> tuple[nn.Module, list, list, list]:
         vl_fn = vae_loss_fn(beta)
         kl_div_fn = kl_loss()
+        reg = reg_loss_fn()
 
         cvae = self.to(device)
         optimizer = torch.optim.Adam(params=cvae.parameters(), lr=learning_rate)
@@ -423,13 +141,12 @@ class ConditionalVae(nn.Module):
 
         vae_loss_li = []
         kl_loss_li = []
-
+        v_loss_li = []
         for epoch in range(epochs):
             i = 0
             for input, label in training_dataloader:
                 input = input.to(device)
                 label = label.to(device)
-
                 output = cvae(input, label)
 
                 # loss function to back-propagate on
@@ -448,11 +165,17 @@ class ConditionalVae(nn.Module):
                     kl_loss_li.append(
                         kl_div_fn(cvae.z_dist)
                     )
+
+                    # print(f"vl_loss: {reg(input, output)}")
+                    v_loss_li.append(reg(input, output))
+
+            print(f"vl_loss: {sum(v_loss_li)}")
             print("Finished epoch: ", epoch + 1)
         return (
             cvae.to('cpu'),
             vae_loss_li,
-            kl_loss_li
+            kl_loss_li,
+            v_loss_li
         )
 
     def generate_data(self, n_samples=5, target_label=0) -> tensor:
@@ -468,4 +191,5 @@ class ConditionalVae(nn.Module):
             label = torch.zeros((n_samples, 10), device=device)
             label[:, target_label] = 1
             latent = torch.cat((input_sample, label), dim=1)
-            return self.decoder(latent)
+            generated_images = self.decoder(latent)
+            return generated_images / 255.0

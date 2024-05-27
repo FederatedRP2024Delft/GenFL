@@ -54,8 +54,7 @@ def get_dataset(args):
 
         apply_transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))])
-
+            transforms.Lambda(lambda x: torch.round(x))])
         train_dataset = datasets.MNIST(data_dir, train=True, download=True,
                                        transform=apply_transform)
 
@@ -122,7 +121,7 @@ def exp_details(args):
 
 
 def reg_loss_fn():
-    mse = nn.MSELoss(reduction='sum')
+    mse = nn.MSELoss(reduction="mean")
     return lambda input, output: (
         mse(input, output)
     )

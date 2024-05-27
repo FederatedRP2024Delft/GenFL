@@ -182,6 +182,42 @@ class ExquisiteNetV1(nn.Module):
             _, loss, _, _ = self.test_inference(testing_data, batch_size)
             print("Testing loss: ", loss)
 
+    def train_model_syn_image(
+            self,
+            input_li,
+            labels_li,
+            epochs=5,
+            learning_rate=0.01
+    ):
+        """
+        input_li, label_li are list of tensors.
+
+        a tensor from input_li should have shape (<batch> 1, 28, 28)
+        a tensor from label_li should have shape (<batch>)
+        """
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.SGD(self.parameters(), lr=learning_rate)
+
+        for epoch in range(epochs):
+            self.train()
+            for i in range(len(input_li)):
+                input = input_li[i]
+                labels = labels_li[i]
+
+                input = input.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+
+                # forward + backward + optimize
+                outputs = self.forward(input)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+            print("Epoch done: ", epoch + 1)
+            print("Training loss: ", loss.item())
+
+
     def test_inference(self, test_dataset, batch_size):
         # model.eval()
         loss, total, correct = 0.0, 0.0, 0.0

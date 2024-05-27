@@ -25,7 +25,7 @@ if __name__ == '__main__':
     train_dataset, test_dataset, _ = get_dataset(args)
 
     # BUILD MODEL
-    if args.model == 'cnn':
+    if args.classifier == 'cnn':
         # Convolutional neural netork
         if args.dataset == 'mnist':
             global_model = CNNMnist(args=args)
@@ -33,7 +33,7 @@ if __name__ == '__main__':
             global_model = CNNFashion_Mnist(args=args)
         elif args.dataset == 'cifar':
             global_model = CNNCifar(args=args)
-    elif args.model == 'mlp':
+    elif args.classifier == 'mlp':
         # Multi-layer preceptron
         img_size = train_dataset[0][0].shape
         len_in = 1
@@ -95,21 +95,21 @@ if __name__ == '__main__':
     plt.plot(range(len(epoch_loss)), epoch_loss)
     plt.xlabel('epochs')
     plt.ylabel('Train loss')
-    plt.savefig('../save/nn_train_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+    plt.savefig('../save/nn_train_{}_{}_{}.png'.format(args.dataset, args.classifier,
+                                                       args.epochs))
 
     # testing
     plt.figure()
     plt.plot(range(len(test_losses)), test_losses)
     plt.xlabel('epochs')
     plt.ylabel('Test loss')
-    plt.savefig('../save/nn_test_loss_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+    plt.savefig('../save/nn_test_loss_{}_{}_{}.png'.format(args.dataset, args.classifier,
+                                                           args.epochs))
 
     # testing
     plt.figure()
     plt.plot(range(len(test_accs)), test_accs)
     plt.xlabel('epochs')
     plt.ylabel('Test accuracy')
-    plt.savefig('../save/nn_test_acc_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+    plt.savefig('../save/nn_test_acc_{}_{}_{}.png'.format(args.dataset, args.classifier,
+                                                          args.epochs))

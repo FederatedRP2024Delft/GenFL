@@ -38,7 +38,7 @@ if __name__ == '__main__':
     train_dataset, test_dataset, user_groups = get_dataset(args)
 
     # BUILD MODEL
-    if args.model == 'cnn':
+    if args.classifier == 'cnn':
         # Convolutional neural netork
         if args.dataset == 'mnist':
             global_model = CNNMnist(args=args)
@@ -47,7 +47,7 @@ if __name__ == '__main__':
         elif args.dataset == 'cifar':
             global_model = CNNCifar(args=args)
 
-    elif args.model == 'mlp':
+    elif args.classifier == 'mlp':
         # Multi-layer preceptron
         img_size = train_dataset[0][0].shape
         len_in = 1
@@ -56,7 +56,7 @@ if __name__ == '__main__':
             global_model = MLP(dim_in=len_in, dim_hidden=64,
                                dim_out=args.num_classes)
 
-    elif args.model == 'vae':
+    elif args.classifier == 'vae':
         global_model = VaeAutoencoderClassifier(dim_encoding=2)
     else:
         exit('Error: unrecognized model')
@@ -131,7 +131,7 @@ if __name__ == '__main__':
 
     # Saving the objects train_loss and train_accuracy:
     file_name = '../save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        format(args.dataset, args.model, args.epochs, args.frac, args.iid,
+        format(args.dataset, args.classifier, args.epochs, args.frac, args.iid,
                args.local_ep, args.local_bs)
 
     with open(file_name, 'wb') as f:
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
     plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+                format(args.dataset, args.classifier, args.epochs, args.frac,
                        args.iid, args.local_ep, args.local_bs))
 
     # Plot Average Accuracy vs Communication rounds
@@ -161,5 +161,5 @@ if __name__ == '__main__':
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
     plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+                format(args.dataset, args.classifier, args.epochs, args.frac,
                        args.iid, args.local_ep, args.local_bs))

@@ -68,7 +68,7 @@ class LocalUpdate(object):
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
-        if self.args.model == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
+        if self.args.classifier == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
             loss = np.mean(model.train_model(self.trainloader.dataset, epochs=self.args.local_ep)[1])
             print(loss)
             return model.state_dict(), loss
@@ -107,7 +107,7 @@ class LocalUpdate(object):
 
             # Inference
             outputs = model(images)
-            if self.args.model == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
+            if self.args.classifier == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
                 complete_loss_fn = vae_classifier_loss_fn(model.alpha, model.beta)
                 loss += complete_loss_fn(images, outputs, model.z_dist, labels)
                 _, pred_labels = torch.max(outputs[1], 1)
@@ -146,7 +146,7 @@ def test_inference(args, model, test_dataset):
 
         # Inference
         outputs = model(images)
-        if args.model == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
+        if args.classifier == 'vae' or model is isinstance(model, VaeAutoencoderClassifier):
             complete_loss_fn = vae_classifier_loss_fn(model.alpha, model.beta)
             loss += complete_loss_fn(images, outputs, model.z_dist, labels)/len(testloader)
             _, pred_labels = torch.max(outputs[1], 1)

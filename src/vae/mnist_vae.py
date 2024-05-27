@@ -141,7 +141,8 @@ class ConditionalVae(nn.Module):
 
         vae_loss_li = []
         kl_loss_li = []
-        v_loss_li = []
+        reg_loss_li = []
+
         for epoch in range(epochs):
             i = 0
             for input, label in training_dataloader:
@@ -167,15 +168,15 @@ class ConditionalVae(nn.Module):
                     )
 
                     # print(f"vl_loss: {reg(input, output)}")
-                    v_loss_li.append(reg(input, output))
+                    reg_loss_li.append(reg(input, output))
 
-            print(f"vl_loss: {sum(v_loss_li)}")
+            print(f"vl_loss: {sum(reg_loss_li)}")
             print("Finished epoch: ", epoch + 1)
         return (
             cvae.to('cpu'),
             vae_loss_li,
             kl_loss_li,
-            v_loss_li
+            reg_loss_li
         )
 
     def generate_data(self, n_samples=5, target_label=0) -> tensor:

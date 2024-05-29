@@ -56,12 +56,9 @@ class LocalUpdate(object):
         idxs_test = idxs[int(0.9*len(idxs)):]
 
         train_dataset = DatasetSplit(dataset, idxs_train)
-        # trained_vae = VaeAutoencoderClassifier(dim_encoding=2)
-        # trained_vae.load_state_dict(torch.load("C:\\Users\\LohithSai\\Desktop\\FederatedImputation\\vae_data"
-        #                                        f"\\models\\vae_{self.args.dirichlet}.pth"))
         trained_cvae = ConditionalVae(dim_encoding=3)
 
-        checkpoint = torch.load(f'/home/neo/projects/FederatedImputation/vae_data/models/0_cvae_{self.args.dirichlet}.pth')
+        checkpoint = torch.load(f'/home/neo/projects/Federated-Learning-PyTorch/vae_data/models/0_cvae_{self.args.dirichlet}.pth')
         trained_cvae.load_state_dict(checkpoint)
 
         generated_train_dataset = impute_cvae_naive(k=self.args.num_generate, trained_cvae=trained_cvae, initial_dataset=train_dataset)

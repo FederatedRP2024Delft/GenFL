@@ -21,12 +21,12 @@ if __name__ == '__main__':
             self.iid = 1
             self.num_classes = 10
             self.num_users = 10
-            self.dataset = 'mnist'
+            self.dataset = 'fmnist'
 
     training_data, testing_data, user_groups = get_dataset(args())
 
     model = "cvae"
-    dataset = "mnist"
+    dataset = "fmnist"
     batch_size = 32
     epochs = 20
     learning_rate = 0.001
@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     # train classifier on gen data and test on entire 70000 real dataset
     model = "exq_v1"
-    dataset = "mnist"
+    dataset = "fmnist"
     batch_size = 32
     learning_rate = 0.001
     epochs = 20

@@ -37,7 +37,7 @@ if __name__ == '__main__':
     device = 'cuda' if args.gpu else 'cpu'
 
     # load dataset and user groups
-    training_data, testing_data, user_groups = get_dataset(args)
+    training_dataset, testing_dataset, user_groups = get_dataset(args)
 
 
     # BUILD MODEL
@@ -71,7 +71,7 @@ if __name__ == '__main__':
             idxs_users = np.random.choice(range(args.num_users), m, replace=False)
             dataset_size_per_client = [len(user_groups[i]) for i in idxs_users]
             for idx in idxs_users:
-                local_model = LocalUpdate(args=args, dataset=training_data,
+                local_model = LocalUpdate(args=args, dataset=training_dataset,
                                           idxs=user_groups[idx], logger=logger)
 
                 # create a new instance of the same model
@@ -105,14 +105,14 @@ if __name__ == '__main__':
             list_acc, list_loss = [], []
             global_model.eval()
             for c in range(args.num_users):
-                local_model = LocalUpdate(args=args, dataset=training_data,
+                local_model = LocalUpdate(args=args, dataset=training_dataset,
                                           idxs=user_groups[c], logger=logger)
                 acc, loss = local_model.inference(model=global_model)
                 list_acc.append(acc)
                 test_losses_per_client[c][epoch] = loss
                 test_accuracies_per_client[c][epoch] = acc
-                print("Accuracy: ", acc)
-                print("Loss: ", loss)
+                print(f"Client {c} accuracy: ", acc)
+                print(f"Loss {c}: ", loss)
             train_accuracies.append(sum(list_acc) / len(list_acc))
 
             # print(f"IID data total communication rounds {i} accuracy: ", accuracy)
@@ -127,21 +127,21 @@ if __name__ == '__main__':
 
         torch.save(global_model.state_dict(), model_dict_path)
 
-    # test model if cvae
+    # test model if cvae on 70000 real data set
     if args.model == 'cvae':
         # generate data to train classifier to determine CAS score
         final_training_data = impute_cvae_naive(k=60000, trained_cvae=global_model, initial_dataset=torch.tensor([]))
+        final_testing_data = torch.utils.data.ConcatDataset([training_dataset, testing_dataset])
 
+        print("Final testing dataset size: ", len(final_testing_data))
 
         # train classifier on gen data
-        model = "exq_v1"
-        dataset = args.dataset
         batch_size = 32
         learning_rate = 0.001
-        epochs = 10
+        epochs = 20
 
         train_loader = torch.utils.data.DataLoader(final_training_data, batch_size=batch_size, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(testing_data, batch_size=batch_size, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(final_testing_data, batch_size=batch_size, shuffle=True)
 
         classifier = ExquisiteNetV1(class_num=10, img_channels=1).to(device)
 
@@ -153,6 +153,7 @@ if __name__ == '__main__':
         train_losses = []
         test_losses = []
         f1_scores = []
+        cas_scores = []
         correct_predictions = 0
         total_predictions = 0
         for epoch in tqdm(range(epochs)):
@@ -212,8 +213,10 @@ if __name__ == '__main__':
             test_f1_score = f1_score(test_actual_labels, test_pred_labels, average='macro')
             f1_scores.append(test_f1_score)
             accuracy = correct_predictions / total_predictions
+            cas_scores.append(accuracy)
 
-            print(f'Accuracy: {accuracy * 100}%')
+            # test classifier with real testing data per epoch
+            print(f'CAS: {accuracy * 100}%')
             print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f} \tF1 Test Macro: {:.6f}'.format(
                 epoch + 1,
                 train_loss,
@@ -221,15 +224,7 @@ if __name__ == '__main__':
                 test_f1_score
             ))
 
-        # # Saving the objects train_loss and train_accuracy:
-        # file_name = '../objects/cvae_{}_{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        #     format(args.num_users, args.dirichlet, args.dataset, args.model, args.epochs, args.frac, args.iid,
-        #            args.local_ep, args.local_bs)
-        #
-        # with open(file_name, 'wb') as f:
-        #     pickle.dump([train_losses_per_client, test_losses_per_client, test_accuracies_per_client], f)
-
-        # test classifier with real testing data
+        # final CAS score testing on 70000
         correct_predictions = 0
         total_predictions = 0
         with torch.no_grad():
@@ -247,5 +242,9 @@ if __name__ == '__main__':
                 correct_predictions += (predicted == labels).sum().item()
 
         accuracy = correct_predictions / total_predictions
-
         print(f'CAS: {accuracy * 100}%')
+
+        print("Train losses: ", train_losses)
+        print("Test losses: ", test_losses)
+        print("F1 scores: ", f1_scores)
+        print("CAS scores: ", cas_scores)

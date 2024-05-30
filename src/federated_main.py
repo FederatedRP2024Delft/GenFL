@@ -49,122 +49,121 @@ if __name__ == '__main__':
 
     model_dict_path = f"../models/federated_{args.model}_{args.dataset}_{args.iid}_{args.dirichlet}_{args.epochs}_{args.local_ep}_{args.num_users}.pt"
 
-    # if os.path.exists(model_dict_path):
-    #     global_model.load_state_dict(torch.load(model_dict_path))
-    # else:
-
-    # Set the model to train and send it to device.
-    global_model.to(device)
-    global_model.train()
-
-    # if classifier and non-IID, pre-train with synthetic data on server
-    if args.model == 'exq':
-        gen_model_path = f"../models/federated_cvae_{args.dataset}_{args.iid}_{args.dirichlet}_20_{args.local_ep}_{args.num_users}.pt"
-        gen_model = ConditionalVae(dim_encoding=3)
-        gen_model.load_state_dict(torch.load(gen_model_path))
-
-        gen_train_dataset = impute_cvae_naive(k=60000, trained_cvae=gen_model, initial_dataset=torch.tensor([]))
-
-        batch_size = 32
-        learning_rate = 0.001
-        epochs = 5
-
-        # train classifier on gen data
-        train_loader = DataLoader(gen_train_dataset, batch_size=batch_size, shuffle=True)
-
-        # Define the loss function and the optimizer
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(global_model.parameters(), lr=learning_rate)
-
-        # Number of epochs to train the model
-        for epoch in tqdm(range(epochs)):
-            for data, target in train_loader:
-                data, target = data.to(device), target.to(device)
-
-                # Clear the gradients of all optimized variables
-                optimizer.zero_grad()
-
-                # Forward pass: compute predicted outputs by passing inputs to the model
-                output = global_model(data)
-
-                # Calculate the loss
-                loss = criterion(output, target)
-
-                # Backward pass: compute gradient of the loss with respect to model parameters
-                loss.backward()
-
-                # Perform single optimization step (parameter update)
-                optimizer.step()
-
-    # copy weights
-    global_weights = global_model.state_dict()
-
-    # Training
-    train_losses, train_accuracies = [], []
-    test_losses_per_client, test_accuracies_per_client = np.zeros((args.num_users, args.epochs)), np.zeros((args.num_users, args.epochs))
-    train_losses_per_client = np.zeros((args.num_users, args.epochs))
-
-    for epoch in tqdm(range(args.epochs)):
-        local_weights, local_losses = [], []
-
+    if os.path.exists(model_dict_path):
+        global_model.load_state_dict(torch.load(model_dict_path))
+    else:
+        # Set the model to train and send it to device.
+        global_model.to(device)
         global_model.train()
-        m = max(int(args.frac * args.num_users), 1)
-        idxs_users = np.random.choice(range(args.num_users), m, replace=False)
-        dataset_size_per_client = [len(user_groups[i]) for i in idxs_users]
-        for idx in idxs_users:
-            local_model = LocalUpdate(args=args, dataset=training_dataset,
-                                      idxs=user_groups[idx], logger=logger)
 
-            # create a new instance of the same model
-            if args.model == 'cvae':
-                model_copy = type(global_model)(3).to(device)
-            else:
-                model_copy = type(global_model)(10, 1).to(device)
-            model_copy.load_state_dict(global_model.state_dict())
+        # if classifier and non-IID, pre-train with synthetic data on server
+        if args.model == 'exq':
+            gen_model_path = f"../models/federated_cvae_{args.dataset}_{args.iid}_{args.dirichlet}_20_{args.local_ep}_{args.num_users}.pt"
+            gen_model = ConditionalVae(dim_encoding=3)
+            gen_model.load_state_dict(torch.load(gen_model_path))
 
-            w, loss = local_model.update_weights(model=model_copy, global_round=epoch)
-            local_weights.append(copy.deepcopy(w))
-            train_losses_per_client[idx][epoch] = loss
-            # print(f"actual loss: {loss}")
-            if np.isnan(loss):
-                # print("loss was nan!!!!!!!!!!!!!!!")
-                loss = local_losses[-1] if len(local_losses) > 0 else 0
-            local_losses.append(copy.deepcopy(loss))
+            gen_train_dataset = impute_cvae_naive(k=60000, trained_cvae=gen_model, initial_dataset=torch.tensor([]))
 
-        # update global weights
-        global_weights = fed_avg(local_weights, dataset_size_per_client)
+            batch_size = 32
+            learning_rate = 0.001
+            epochs = 5
 
-        # update global weights
-        global_model.load_state_dict(global_weights)
+            # train classifier on gen data
+            train_loader = DataLoader(gen_train_dataset, batch_size=batch_size, shuffle=True)
 
-        loss_avg = sum(local_losses) / len(local_losses)
-        train_losses.append(loss_avg)
+            # Define the loss function and the optimizer
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(global_model.parameters(), lr=learning_rate)
 
-        # Calculate avg training accuracy over all users at every epoch
-        list_acc, list_loss = [], []
-        global_model.eval()
-        for c in range(args.num_users):
-            local_model = LocalUpdate(args=args, dataset=training_dataset,
-                                      idxs=user_groups[c], logger=logger)
-            acc, loss = local_model.inference(model=global_model)
-            list_acc.append(acc)
-            list_loss.append(loss)
-            test_losses_per_client[c][epoch] = loss
-            test_accuracies_per_client[c][epoch] = acc
-            # print(f"Client {c} accuracy: ", acc)
-            # print(f"Loss {c}: ", loss)
-        accuracy = sum(list_acc) / len(list_acc)
-        train_accuracies.append(accuracy)
-        print(f"IID data total communication rounds {epoch+1} accuracy: ", accuracy)
-        print(f' \nAvg Training Stats after {epoch+1} global rounds:')
-        print(f'Training Loss : {np.mean(np.array(train_losses))}')
-        print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracies[-1]))
+            # Number of epochs to train the model
+            for epoch in tqdm(range(epochs)):
+                for data, target in train_loader:
+                    data, target = data.to(device), target.to(device)
 
-    print("Train losses per communication round: ", train_losses)
-    print("Train accuracies per communication round: ", train_accuracies)
-    print("Test losses per communication round for each client: ", test_losses_per_client)
-    print("Test accuracies per communication round for each client: ", test_accuracies_per_client)
-    torch.save(global_model.state_dict(), model_dict_path)
+                    # Clear the gradients of all optimized variables
+                    optimizer.zero_grad()
+
+                    # Forward pass: compute predicted outputs by passing inputs to the model
+                    output = global_model(data)
+
+                    # Calculate the loss
+                    loss = criterion(output, target)
+
+                    # Backward pass: compute gradient of the loss with respect to model parameters
+                    loss.backward()
+
+                    # Perform single optimization step (parameter update)
+                    optimizer.step()
+
+        # copy weights
+        global_weights = global_model.state_dict()
+
+        # Training
+        train_losses, train_accuracies = [], []
+        test_losses_per_client, test_accuracies_per_client = np.zeros((args.num_users, args.epochs)), np.zeros((args.num_users, args.epochs))
+        train_losses_per_client = np.zeros((args.num_users, args.epochs))
+
+        for epoch in tqdm(range(args.epochs)):
+            local_weights, local_losses = [], []
+
+            global_model.train()
+            m = max(int(args.frac * args.num_users), 1)
+            idxs_users = np.random.choice(range(args.num_users), m, replace=False)
+            dataset_size_per_client = [len(user_groups[i]) for i in idxs_users]
+            for idx in idxs_users:
+                local_model = LocalUpdate(args=args, dataset=training_dataset,
+                                          idxs=user_groups[idx], logger=logger)
+
+                # create a new instance of the same model
+                if args.model == 'cvae':
+                    model_copy = type(global_model)(3).to(device)
+                else:
+                    model_copy = type(global_model)(10, 1).to(device)
+                model_copy.load_state_dict(global_model.state_dict())
+
+                w, loss = local_model.update_weights(model=model_copy, global_round=epoch)
+                local_weights.append(copy.deepcopy(w))
+                train_losses_per_client[idx][epoch] = loss
+                # print(f"actual loss: {loss}")
+                if np.isnan(loss):
+                    # print("loss was nan!!!!!!!!!!!!!!!")
+                    loss = local_losses[-1] if len(local_losses) > 0 else 0
+                local_losses.append(copy.deepcopy(loss))
+
+            # update global weights
+            global_weights = fed_avg(local_weights, dataset_size_per_client)
+
+            # update global weights
+            global_model.load_state_dict(global_weights)
+
+            loss_avg = sum(local_losses) / len(local_losses)
+            train_losses.append(loss_avg)
+
+            # Calculate avg training accuracy over all users at every epoch
+            list_acc, list_loss = [], []
+            global_model.eval()
+            for c in range(args.num_users):
+                local_model = LocalUpdate(args=args, dataset=training_dataset,
+                                          idxs=user_groups[c], logger=logger)
+                acc, loss = local_model.inference(model=global_model)
+                list_acc.append(acc)
+                list_loss.append(loss)
+                test_losses_per_client[c][epoch] = loss
+                test_accuracies_per_client[c][epoch] = acc
+                # print(f"Client {c} accuracy: ", acc)
+                # print(f"Loss {c}: ", loss)
+            accuracy = sum(list_acc) / len(list_acc)
+            train_accuracies.append(accuracy)
+            print(f"IID data total communication rounds {epoch+1} accuracy: ", accuracy)
+            print(f' \nAvg Training Stats after {epoch+1} global rounds:')
+            print(f'Training Loss : {np.mean(np.array(train_losses))}')
+            print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracies[-1]))
+
+        print("Train losses per communication round: ", train_losses)
+        print("Train accuracies per communication round: ", train_accuracies)
+        print("Test losses per communication round for each client: ", test_losses_per_client)
+        print("Test accuracies per communication round for each client: ", test_accuracies_per_client)
+        torch.save(global_model.state_dict(), model_dict_path)
 
 
     # train classifier on syn data and test on 70000 real data set

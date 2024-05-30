@@ -50,27 +50,17 @@ class LocalUpdate(object):
         and user indexes.
         """
         random.shuffle(idxs)
+
         # split indexes for train, validation, and test (80, 10, 10)
         idxs_train = idxs[:int(0.8*len(idxs))]
         idxs_val = idxs[int(0.8*len(idxs)):int(0.9*len(idxs))]
         idxs_test = idxs[int(0.9*len(idxs)):]
-
-        train_dataset = DatasetSplit(dataset, idxs_train)
-        trained_cvae = ConditionalVae(dim_encoding=3)
-
-        checkpoint = torch.load(f'/home/neo/projects/Federated-Learning-PyTorch/vae_data/models/0_cvae_{self.args.dirichlet}.pth')
-        trained_cvae.load_state_dict(checkpoint)
-
-        generated_train_dataset = impute_cvae_naive(k=self.args.num_generate, trained_cvae=trained_cvae, initial_dataset=train_dataset)
-        generated_train_dataset = [(torch.tensor(image), torch.tensor(label)) for image, label in
-                                           generated_train_dataset]
-
-        trainloader = DataLoader(generated_train_dataset,
+        trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
                                  batch_size=self.args.local_bs, shuffle=True)
         validloader = DataLoader(DatasetSplit(dataset, idxs_val),
-                                 batch_size=int(len(idxs_val)/10), shuffle=True)
+                                 batch_size=int(len(idxs_val) / 10), shuffle=True)
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
-                                batch_size=int(len(idxs_test)/10), shuffle=True)
+                                batch_size=int(len(idxs_test) / 10), shuffle=True)
         return trainloader, validloader, testloader
 
     def update_weights(self, model, global_round):

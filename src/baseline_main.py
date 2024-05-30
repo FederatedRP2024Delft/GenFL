@@ -136,7 +136,7 @@ if __name__ == '__main__':
         accuracy = correct_predictions / total_predictions
         cas_scores.append(accuracy)
 
-        print(f'Accuracy: {accuracy * 100}%')
+        print(f'CAS score: {accuracy * 100}%')
         print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f} \tF1 Test Macro: {:.6f}'.format(
             epoch + 1,
             train_loss,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 # local training and testing
 python baseline_main.py
 python baseline_main.py

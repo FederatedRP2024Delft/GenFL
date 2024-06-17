@@ -23,6 +23,10 @@ def args_parser():
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
+    parser.add_argument('--pretrain', type=str, default='False',
+                        help='To pretrain classifier or not')
+
+
 
     # model arguments
     parser.add_argument('--model', type=str, default='mlp', help='model name')

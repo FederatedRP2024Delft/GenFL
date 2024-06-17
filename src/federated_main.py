@@ -105,38 +105,39 @@ if __name__ == '__main__':
         # Test
         test_losses = []
         test_weighted_accuracies = []
+        test_weighted_f1_scores = []
         test_losses_per_client = np.zeros((args.num_users, args.epochs))
         test_accuracy_per_client = np.zeros((args.num_users, args.epochs))
+        test_f1_score_per_client = np.zeros((args.num_users, args.epochs))
+
+        # set client ratios
+        m = max(int(args.frac * args.num_users), 1)
+        idxs_users = np.random.choice(range(args.num_users), m, replace=False)
+        dataset_size_per_client = [len(user_groups[i]) for i in idxs_users]
+
+        print("Client indices")
+        print(idxs_users)
+        print()
+        print("Dataset size per client")
+        print(dataset_size_per_client)
+        print()
+        ratio_per_client = [0] * args.num_users
+        for i in idxs_users:
+            ratio_per_client[i] = (dataset_size_per_client[i] / sum(dataset_size_per_client))
+
+        print("Ratio per client")
+        print(ratio_per_client)
+
+        print("Total dataset")
+        print(sum(dataset_size_per_client))
+
+        # all test data will be 0.1 of each client's total dataset
+        print("Ratios sum")
+        print(sum(ratio_per_client))
 
         for epoch in tqdm(range(args.epochs)):
             local_weights, local_losses = [], []
-
             global_model.train()
-
-            m = max(int(args.frac * args.num_users), 1)
-            idxs_users = np.random.choice(range(args.num_users), m, replace=False)
-            dataset_size_per_client = [len(user_groups[i]) for i in idxs_users]
-
-            print("Client indices")
-            print(idxs_users)
-            print()
-            print("Dataset size per client")
-            print(dataset_size_per_client)
-            print()
-            ratio_per_client = [0] * args.num_users
-            for i in idxs_users:
-                ratio_per_client[i] = (dataset_size_per_client[i] / sum(dataset_size_per_client))
-
-            print("Ratio per client")
-            print(ratio_per_client)
-
-            print("Total dataset")
-            print(sum(dataset_size_per_client))
-
-            # all test data will be 0.1 of each client's total dataset
-            print("Ratios sum")
-            print(sum(ratio_per_client))
-
             for idx in idxs_users:
                 local_model = LocalUpdate(args=args, dataset=training_dataset,
                                           idxs=user_groups[idx], logger=logger)
@@ -173,34 +174,38 @@ if __name__ == '__main__':
                 local_model = LocalUpdate(args=args, dataset=training_dataset,
                                           idxs=user_groups[idx], logger=logger)
 
-                acc, loss = local_model.inference(model=global_model)
+                acc, loss, f1_score = local_model.inference(model=global_model)
                 test_losses_per_client[idx][epoch] = loss
                 test_accuracy_per_client[idx][epoch] = acc
+                test_f1_score_per_client[idx][epoch] = f1_score
+
                 list_loss.append(loss)
                 list_weighted_acc.append(acc * ratio_per_client[idx])
-                # list_f1_score.append()
+                list_f1_score.append(f1_score * ratio_per_client[idx])
 
             test_losses.append(sum(list_loss) / len(list_loss))
             total_weighted_accuracies = sum(list_weighted_acc)
             test_weighted_accuracies.append(total_weighted_accuracies)
-            # test_weighted_accuracies.append(total_weighted_accuracies)
+            total_weighted_f1_scores = sum(list_f1_score)
+            test_weighted_f1_scores.append(total_weighted_f1_scores)
 
 
             print(f' \nAvg Training Stats after {epoch+1} global rounds:')
             print(f'Training Loss : {np.mean(np.array(train_losses))}')
             print('Test Accuracy: {:.2f}% \n'.format(100 * total_weighted_accuracies))
+            print('Test F1 score: {:.2f}% \n'.format(100 * total_weighted_f1_scores))
+
 
         print("Train losses per communication round: ", train_losses)
         print("Test losses per communication round: ", test_losses)
         print("Test weighted accuracies per communication round: ", test_weighted_accuracies)
-        # print("Test weighted F1 scores per communication round: ", test_weighted_f1_scores)
+        print("Test weighted F1 scores per communication round: ", test_weighted_f1_scores)
 
         print("Test losses per communication round for each client: ", test_losses_per_client)
         print("Test accuracies per communication round for each client: ", test_accuracy_per_client)
-        # print("Test F1-score per communication round for each client: ", test_accuracies_per_client)
+        print("Test F1-score per communication round for each client: ", test_f1_score_per_client)
 
         torch.save(global_model.state_dict(), model_dict_path)
-
 
     # train classifier on syn data and test on 70000 real data set
     if args.model == 'cvae':

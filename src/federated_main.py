@@ -205,7 +205,7 @@ if __name__ == '__main__':
         print("Test accuracies per communication round for each client: ", test_accuracy_per_client)
         print("Test F1-score per communication round for each client: ", test_f1_score_per_client)
 
-        torch.save(global_model.state_dict(), model_dict_path)
+        # torch.save(global_model.state_dict(), model_dict_path)
 
     # train classifier on syn data and test on 70000 real data set
     if args.model == 'cvae':

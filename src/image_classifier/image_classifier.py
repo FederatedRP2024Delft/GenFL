@@ -57,14 +57,19 @@ class MNISTClassifier(nn.Module):
             testing_data: Dataset
     ) -> float:
         test_dataloader = DataLoader(testing_data, shuffle=True)
-
+        wrong = 0
         correct = 0
         total = 0
-        for input, labels in test_dataloader:
+        for input, label in test_dataloader:
             outputs = self.forward(input)
             _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            if predicted != label:
+                wrong += 1
+            else:
+                correct += 1
+            total += 1
+        print(correct)
+        print(wrong)
         return correct / total
 
     def generate_labels(
@@ -83,14 +88,19 @@ class MNISTClassifier(nn.Module):
             testing_data: tensor,
             labels: tensor
     ) -> float:
+        wrong = 0
         correct = 0
         total = 0
         for i, input in enumerate(testing_data):
             outputs = self.forward(input)
             _, predicted = torch.max(outputs.data, 1)
             _, label = torch.max(labels[i], 0)
+            if predicted != label:
+                wrong += 1
+            else:
+                correct += 1
             total += 1
-            correct += (predicted == label).sum().item()
+        # print("Wrong count: ", wrong)
         return correct / total
 
 

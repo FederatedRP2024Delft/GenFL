@@ -23,6 +23,10 @@ def args_parser():
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
+    parser.add_argument('--pretrain', type=str, default='False',
+                        help='To pretrain classifier or not')
+
+
 
     # model arguments
     parser.add_argument('--model', type=str, default='mlp', help='model name')
@@ -60,6 +64,7 @@ def args_parser():
     parser.add_argument('--stopping_rounds', type=int, default=10,
                         help='rounds of early stopping')
     parser.add_argument('--verbose', type=int, default=1, help='verbose')
+    parser.add_argument('--num_generate', type=int, default=30, help='number of generated images to impute')
     parser.add_argument('--seed', type=int, default=1, help='random seed')
     args = parser.parse_args()
     return args

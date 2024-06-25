@@ -1,115 +1,145 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Python version: 3.6
-
-
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-
-import torch
-from torch.utils.data import DataLoader
+import os
 
 from utils import get_dataset
-from options import args_parser
-from update import test_inference
-from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
+from vae.mnist_vae import ConditionalVae
+from impute import impute_cvae_naive
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from image_classifier.exq_net_v1 import ExquisiteNetV1
+import torch
+from torch import nn, optim
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if __name__ == '__main__':
-    args = args_parser()
-    if args.gpu:
-        torch.cuda.set_device(args.gpu)
-    device = 'cuda' if args.gpu else 'cpu'
+    # binarize the data
+    class args:
+        def __init__(self):
+            self.num_channels = 1
+            self.iid = 1
+            self.num_classes = 10
+            self.num_users = 10
+            self.dataset = 'fmnist'
 
-    # load datasets
-    train_dataset, test_dataset, _ = get_dataset(args)
+    training_data, testing_data, user_groups = get_dataset(args())
 
-    # BUILD MODEL
-    if args.model == 'cnn':
-        # Convolutional neural netork
-        if args.dataset == 'mnist':
-            global_model = CNNMnist(args=args)
-        elif args.dataset == 'fmnist':
-            global_model = CNNFashion_Mnist(args=args)
-        elif args.dataset == 'cifar':
-            global_model = CNNCifar(args=args)
-    elif args.model == 'mlp':
-        # Multi-layer preceptron
-        img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in img_size:
-            len_in *= x
-            global_model = MLP(dim_in=len_in, dim_hidden=64,
-                               dim_out=args.num_classes)
+    model = "cvae"
+    dataset = "fmnist"
+    batch_size = 32
+    epochs = 20
+    learning_rate = 0.001
+
+    model_path = f"../models/local_{model}_{dataset}_{batch_size}_{epochs}_{learning_rate}.pt"
+
+    if os.path.exists(model_path):
+        cvae_model = torch.load(model_path)
     else:
-        exit('Error: unrecognized model')
+        cvae = ConditionalVae(dim_encoding=3).to(device)
 
-    # Set the model to train and send it to device.
-    global_model.to(device)
-    global_model.train()
-    print(global_model)
+        # try with model sigma
+        cvae_model, vae_loss_li, kl_loss_li, reg_loss_li = cvae.train_model(
+            training_data=training_data,
+            batch_size=batch_size,
+            epochs=epochs,
+            learning_rate=learning_rate
+        )
+        torch.save(cvae_model, model_path)
 
-    # Training
-    # Set optimizer and criterion
-    if args.optimizer == 'sgd':
-        optimizer = torch.optim.SGD(global_model.parameters(), lr=args.lr,
-                                    momentum=0.5)
-    elif args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(global_model.parameters(), lr=args.lr,
-                                     weight_decay=1e-4)
+    # generate synthetic data and 70000 real testing dataset
+    gen_train_dataset = impute_cvae_naive(k=60000, trained_cvae = cvae_model, initial_dataset = torch.tensor([]))
+    final_testing_data = torch.utils.data.ConcatDataset([training_data, testing_data])
+    print(len(final_testing_data))
 
-    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    criterion = torch.nn.NLLLoss().to(device)
-    epoch_loss = []
+    # train classifier on gen data and test on entire 70000 real dataset
+    model = "exq_v1"
+    dataset = "fmnist"
+    batch_size = 32
+    learning_rate = 0.001
+    epochs = 20
+
+    train_loader = DataLoader(gen_train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(final_testing_data, batch_size=batch_size, shuffle=True)
+
+    model_path = f"../models/local_{model}_{dataset}_{batch_size}_{epochs}_{learning_rate}.pt"
+
+    classifier = ExquisiteNetV1(class_num=10, img_channels=1).to(device)
+
+    # Define the loss function and the optimizer
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(classifier.parameters(), lr=learning_rate)
+
+    # Number of epochs to train the model
+    train_losses = []
     test_losses = []
-    test_accs = []
-    for epoch in tqdm(range(args.epochs)):
-        batch_loss = []
+    cas_scores = []
+    correct_predictions = 0
+    total_predictions = 0
+    for epoch in tqdm(range(epochs)):
+        train_loss = 0.0
+        pred_labels = []
+        actual_labels = []
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
 
-        for batch_idx, (images, labels) in enumerate(trainloader):
-            images, labels = images.to(device), labels.to(device)
-
+            # Clear the gradients of all optimized variables
             optimizer.zero_grad()
-            outputs = global_model(images)
-            loss = criterion(outputs, labels)
+
+            # Forward pass: compute predicted outputs by passing inputs to the model
+            output = classifier(data)
+            pred_labels.append(output.argmax(dim=1))
+            actual_labels.append(target)
+
+            # Calculate the loss
+            loss = criterion(output, target)
+
+            # Backward pass: compute gradient of the loss with respect to model parameters
             loss.backward()
+
+            # Perform single optimization step (parameter update)
             optimizer.step()
 
-            if batch_idx % 50 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch+1, batch_idx * len(images), len(trainloader.dataset),
-                    100. * batch_idx / len(trainloader), loss.item()))
-            batch_loss.append(loss.item())
+            # Update running training loss
+            train_loss += loss.item() * data.size(0)
 
-        loss_avg = sum(batch_loss)/len(batch_loss)
-        print('\nTrain loss:', loss_avg)
-        epoch_loss.append(loss_avg)
-        test_acc, test_loss = test_inference(args, global_model, test_dataset)
+        # Switch to evaluation mode
+        classifier.eval()
+        with torch.no_grad():
+            test_loss = 0.0
+            test_pred_labels = []
+            test_actual_labels = []
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                output = classifier(data)
+                loss = criterion(output, target)
+                test_loss += loss.item() * data.size(0)
+                test_pred_labels.append(output.argmax(dim=1))
+                test_actual_labels.append(target)
+                # Compare with actual classes
+                total_predictions += output.argmax(dim=1).size(0)
+                # correct_predictions += (predicted == labels).sum().item()
+                correct_predictions += (output.argmax(dim=1) == target).sum().item()
+
+        # Compute average test loss
+        train_loss = train_loss / len(train_loader.dataset)
+        test_loss = test_loss / len(test_loader.dataset)
         test_losses.append(test_loss)
-        test_accs.append(test_acc)
-        print('Test on', len(test_dataset), 'samples')
-        print("Test Accuracy: {:.2f}%".format(100 * test_acc))
+        train_losses.append(train_loss)
 
-    # Plot loss
-    plt.figure()
-    plt.plot(range(len(epoch_loss)), epoch_loss)
-    plt.xlabel('epochs')
-    plt.ylabel('Train loss')
-    plt.savefig('../save/nn_train_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+        # Calculate CAS score for the test data
+        test_pred_labels = torch.cat(test_pred_labels).to('cpu').numpy()
+        test_actual_labels = torch.cat(test_actual_labels).to('cpu').numpy()
+        accuracy = correct_predictions / total_predictions
+        cas_scores.append(accuracy)
 
-    # testing
-    plt.figure()
-    plt.plot(range(len(test_losses)), test_losses)
-    plt.xlabel('epochs')
-    plt.ylabel('Test loss')
-    plt.savefig('../save/nn_test_loss_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+        print(f'CAS score: {accuracy * 100}%')
+        print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f}'.format(
+            epoch + 1,
+            train_loss,
+            test_loss,
+        ))
 
-    # testing
-    plt.figure()
-    plt.plot(range(len(test_accs)), test_accs)
-    plt.xlabel('epochs')
-    plt.ylabel('Test accuracy')
-    plt.savefig('../save/nn_test_acc_{}_{}_{}.png'.format(args.dataset, args.model,
-                                                 args.epochs))
+    print("Train losses: ", train_losses)
+    print("Test losses: ", test_losses)
+    print("CAS scores: ", cas_scores)
+
+    # torch.save(classifier, model_path)

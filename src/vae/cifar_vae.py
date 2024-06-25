@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal
 from torch.utils.data import DataLoader
 
-from src.utils import vae_loss_fn, kl_loss
+from utils import vae_loss_fn, kl_loss
 
 
 device = device('cuda' if cuda.is_available() else 'cpu')

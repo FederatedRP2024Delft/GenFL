@@ -2,17 +2,12 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 import random
-import torch
-import torch.nn.functional as F
 import numpy as np
 import torch
-from sklearn.metrics import f1_score
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
-from impute import impute_cvae_naive
 from utils import vae_classifier_loss_fn, vae_loss_fn
-from vae.mnist_vae import ConditionalVae
 
 
 class DatasetSplit(Dataset):
@@ -175,12 +170,8 @@ class LocalUpdate(object):
             test_pred_labels.append(outputs.argmax(dim=1))
             test_actual_labels.append(labels)
 
-        test_pred_labels = torch.cat(test_pred_labels).to('cpu').numpy()
-        test_actual_labels = torch.cat(test_actual_labels).to('cpu').numpy()
-
         accuracy = correct / total
-        test_f1_score = f1_score(test_actual_labels, test_pred_labels, average='macro')
-        return accuracy, loss, test_f1_score
+        return accuracy, loss
 
 
 def test_inference(args, model, test_dataset):

@@ -6,10 +6,8 @@
 import os
 import copy
 import time
-import pickle
 import numpy as np
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from options import args_parser
 from update import LocalUpdate
@@ -17,11 +15,11 @@ from utils import get_dataset, exp_details, fed_avg
 from vae.mnist_vae import ConditionalVae
 from impute import impute_cvae_naive
 from tqdm import tqdm
-from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 from image_classifier.exq_net_v1 import ExquisiteNetV1
 import torch
 from torch import nn, optim
+
 
 if __name__ == '__main__':
     start_time = time.time()
@@ -58,6 +56,8 @@ if __name__ == '__main__':
 
         # if set to pretrain and classifier, pre-train with synthetic data on server
         if args.pretrain == 'True' and args.model == 'exq':
+            # gen_model_path = f"../models/federated_cvae_{args.dataset}_1_7.0_20_2_10.pt"
+
             gen_model_path = f"../models/federated_cvae_{args.dataset}_{args.iid}_{args.dirichlet}_20_{args.local_ep}_{args.num_users}.pt"
             gen_model = ConditionalVae(dim_encoding=3)
             gen_model.load_state_dict(torch.load(gen_model_path))
@@ -103,12 +103,15 @@ if __name__ == '__main__':
         train_losses_per_client = np.zeros((args.num_users, args.epochs))
 
         # Test
+        before_test_losses = []
+        before_test_weighted_accuracies = []
+        before_test_losses_per_client = np.zeros((args.num_users, args.epochs))
+        before_test_accuracy_per_client = np.zeros((args.num_users, args.epochs))
+
         test_losses = []
         test_weighted_accuracies = []
-        test_weighted_f1_scores = []
         test_losses_per_client = np.zeros((args.num_users, args.epochs))
         test_accuracy_per_client = np.zeros((args.num_users, args.epochs))
-        test_f1_score_per_client = np.zeros((args.num_users, args.epochs))
 
         # set client ratios
         m = max(int(args.frac * args.num_users), 1)
@@ -136,6 +139,7 @@ if __name__ == '__main__':
         print(sum(ratio_per_client))
 
         for epoch in tqdm(range(args.epochs)):
+            # training
             local_weights, local_losses = [], []
             global_model.train()
             for idx in idxs_users:
@@ -168,47 +172,61 @@ if __name__ == '__main__':
             train_losses.append(loss_avg)
 
             # inference for each client
-            list_loss, list_weighted_acc, list_f1_score = [], [], []
+            list_loss, list_weighted_acc = [], []
             global_model.eval()
             for idx in idxs_users:
                 local_model = LocalUpdate(args=args, dataset=training_dataset,
                                           idxs=user_groups[idx], logger=logger)
 
-                acc, loss, f1_score = local_model.inference(model=global_model)
+                acc, loss = local_model.inference(model=global_model)
                 test_losses_per_client[idx][epoch] = loss
                 test_accuracy_per_client[idx][epoch] = acc
-                test_f1_score_per_client[idx][epoch] = f1_score
 
                 list_loss.append(loss)
                 list_weighted_acc.append(acc * ratio_per_client[idx])
-                list_f1_score.append(f1_score * ratio_per_client[idx])
 
             test_losses.append(sum(list_loss) / len(list_loss))
             total_weighted_accuracies = sum(list_weighted_acc)
             test_weighted_accuracies.append(total_weighted_accuracies)
-            total_weighted_f1_scores = sum(list_f1_score)
-            test_weighted_f1_scores.append(total_weighted_f1_scores)
-
 
             print(f' \nAvg Training Stats after {epoch+1} global rounds:')
             print(f'Training Loss : {np.mean(np.array(train_losses))}')
             print('Test Accuracy: {:.2f}% \n'.format(100 * total_weighted_accuracies))
-            print('Test F1 score: {:.2f}% \n'.format(100 * total_weighted_f1_scores))
-
 
         print("Train losses per communication round: ", train_losses)
         print("Test losses per communication round: ", test_losses)
         print("Test weighted accuracies per communication round: ", test_weighted_accuracies)
-        print("Test weighted F1 scores per communication round: ", test_weighted_f1_scores)
 
         print("Test losses per communication round for each client: ", test_losses_per_client)
         print("Test accuracies per communication round for each client: ", test_accuracy_per_client)
-        print("Test F1-score per communication round for each client: ", test_f1_score_per_client)
 
-        # torch.save(global_model.state_dict(), model_dict_path)
+        if args.model == 'exq':
+            # test global model on real testing data
+            test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=32, shuffle=True)
 
-    # train classifier on syn data and test on 70000 real data set
+            correct_predictions = 0
+            total_predictions = 0
+            with torch.no_grad():
+                for data, labels in test_loader:
+                    data, labels = data.to(device), labels.to(device)
+
+                    # Pass the data to the model
+                    outputs = global_model(data)
+
+                    # Get the predicted class with the highest score
+                    _, predicted = torch.max(outputs.data, 1)
+
+                    # Compare with actual classes
+                    total_predictions += labels.size(0)
+                    correct_predictions += (predicted == labels).sum().item()
+
+            accuracy = correct_predictions / total_predictions
+            print(f'Accuracy: {accuracy * 100}%')
+
+    torch.save(global_model.state_dict(), model_dict_path)
+
     if args.model == 'cvae':
+        # train classifier on syn data and test on 70000 real data set
         # generate data to train classifier to determine CAS score
         final_training_data = impute_cvae_naive(k=60000, trained_cvae=global_model, initial_dataset=torch.tensor([]))
         final_testing_data = torch.utils.data.ConcatDataset([training_dataset, testing_dataset])
@@ -232,7 +250,6 @@ if __name__ == '__main__':
         # Number of epochs to train the model
         train_losses = []
         test_losses = []
-        f1_scores = []
         cas_scores = []
         correct_predictions = 0
         total_predictions = 0
@@ -287,21 +304,15 @@ if __name__ == '__main__':
             test_losses.append(test_loss)
             train_losses.append(train_loss)
 
-            # Calculate F1 score for the test data
-            test_pred_labels = torch.cat(test_pred_labels).to('cpu').numpy()
-            test_actual_labels = torch.cat(test_actual_labels).to('cpu').numpy()
-            test_f1_score = f1_score(test_actual_labels, test_pred_labels, average='macro')
-            f1_scores.append(test_f1_score)
             accuracy = correct_predictions / total_predictions
             cas_scores.append(accuracy)
 
             # test classifier with real testing data per epoch
             print(f'CAS: {accuracy * 100}%')
-            print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f} \tF1 Test Macro: {:.6f}'.format(
+            print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f}'.format(
                 epoch + 1,
                 train_loss,
                 test_loss,
-                test_f1_score
             ))
 
         # final CAS score testing on 70000
@@ -326,5 +337,4 @@ if __name__ == '__main__':
 
         print("Train losses: ", train_losses)
         print("Test losses: ", test_losses)
-        print("F1 scores: ", f1_scores)
         print("CAS scores: ", cas_scores)

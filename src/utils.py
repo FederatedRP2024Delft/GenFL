@@ -4,11 +4,9 @@
 
 import copy
 import torch
-from torch import tensor
 from torch import nn
 from torch.distributions.kl import kl_divergence
 from torch.distributions.normal import Normal
-from torcheval.metrics import FrechetInceptionDistance
 from sampling import *
 
 
@@ -57,12 +55,17 @@ def get_dataset(args):
                                            transform=apply_transform)
             test_dataset = datasets.MNIST(data_dir, train=False, download=True,
                                           transform=apply_transform)
+            # train_dataset = datasets.MNIST(data_dir, train=True, download=True)
+            # test_dataset = datasets.MNIST(data_dir, train=False, download=True)
         else:
             data_dir = '../../data/fmnist/'
             train_dataset = datasets.FashionMNIST(data_dir, train=True, download=True,
                                            transform=apply_transform)
             test_dataset = datasets.FashionMNIST(data_dir, train=False, download=True,
                                           transform=apply_transform)
+            # train_dataset = datasets.FashionMNIST(data_dir, train=True, download=True)
+            # test_dataset = datasets.FashionMNIST(data_dir, train=False, download=True)
+
 
         # sample training data amongst users
         if args.iid == 1:

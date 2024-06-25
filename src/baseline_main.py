@@ -4,14 +4,12 @@ from utils import get_dataset
 from vae.mnist_vae import ConditionalVae
 from impute import impute_cvae_naive
 from tqdm import tqdm
-from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 from image_classifier.exq_net_v1 import ExquisiteNetV1
 import torch
 from torch import nn, optim
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 if __name__ == '__main__':
     # binarize the data
@@ -73,7 +71,6 @@ if __name__ == '__main__':
     # Number of epochs to train the model
     train_losses = []
     test_losses = []
-    f1_scores = []
     cas_scores = []
     correct_predictions = 0
     total_predictions = 0
@@ -128,25 +125,21 @@ if __name__ == '__main__':
         test_losses.append(test_loss)
         train_losses.append(train_loss)
 
-        # Calculate F1 score for the test data
+        # Calculate CAS score for the test data
         test_pred_labels = torch.cat(test_pred_labels).to('cpu').numpy()
         test_actual_labels = torch.cat(test_actual_labels).to('cpu').numpy()
-        test_f1_score = f1_score(test_actual_labels, test_pred_labels, average='macro')
-        f1_scores.append(test_f1_score)
         accuracy = correct_predictions / total_predictions
         cas_scores.append(accuracy)
 
         print(f'CAS score: {accuracy * 100}%')
-        print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f} \tF1 Test Macro: {:.6f}'.format(
+        print('Epoch: {} \tTraining Loss: {:.6f} \t Test Loss: {:.6f}'.format(
             epoch + 1,
             train_loss,
             test_loss,
-            test_f1_score
         ))
 
     print("Train losses: ", train_losses)
     print("Test losses: ", test_losses)
-    print("F1 scores: ", f1_scores)
     print("CAS scores: ", cas_scores)
 
     # torch.save(classifier, model_path)
